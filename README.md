@@ -642,8 +642,9 @@ ctest --test-dir out/regression-tests --output-on-failure
 ```
 
 These tests use synthetic data and require no game files, headset, OpenXR runtime, vcpkg dependencies or RedHook SDK.
-They cover bounded skeleton reads, physical body/holster facing, carriage input axes and current/previous holster
-draw-record transforms. Passing them does not establish correct rendering or gameplay in a headset.
+They cover bounded skeleton reads, physical body/holster facing, carriage input axes, current/previous holster
+draw-record transforms and pelvis-relative holster mirroring. Passing them does not establish correct rendering or
+gameplay in a headset.
 
 ## How it works (briefly)
 

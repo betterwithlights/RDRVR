@@ -25,6 +25,7 @@
 #include "core/d3d_hooks.h"
 #include "core/dual.h"
 #include "core/hands.h"
+#include "core/holster_frame.h"
 #include "core/hooks.h"
 #include "core/log.h"
 #include "core/menu.h"
@@ -713,7 +714,6 @@ void holster_frame() {
     // the twins' mirror (and the left-handed layout's) through the pelvis as drawn: the root bone sways against the body
     // (r12_twinbase: 6 cm sideways standing still), and a twin mirrored through it went twice that (the user's "Left
     // sidearm ring still moves around")
-    const float* mid = bp.bone_ok[body::kPelvisPoint] ? bp.bone[body::kPelvisPoint] : bp.root;
     for (int z = 0; z < kZones; ++z) {
         // the wheel mode (run 8 item 5): no holster draws or put-aways, the chest's rounds kept
         zok[z] = zones[z].enabled && bp.bone_ok[zones[z].bone] && (zone_rounds(z) || !wheel::wheel_mode());
@@ -726,15 +726,13 @@ void holster_frame() {
             }
         }
         if (zones[z].mirror) {  // the twin's bone: mirrored across the body's middle
-            const float d = (base[0] - mid[0]) * right[0] + (base[2] - mid[2]) * right[2];
-            for (int k = 0; k < 3; ++k) base[k] -= 2.0f * d * right[k];
+            holster_frame::mirror_body_point(base, right, bp.root, bp.bone[body::kPelvisPoint], bp.bone_ok[body::kPelvisPoint]);
         }
         std::memcpy(bases[z], base, sizeof(base));
         for (int k = 0; k < 3; ++k)
             zp[z][k] = base[k] + right[k] * zoff(z, 0) + up[k] * zoff(z, 1) + fwd[k] * zoff(z, 2);
         if (lefty) {  // the whole layout mirrored across the body's middle: the sidearm on the left hip
-            const float d = (zp[z][0] - mid[0]) * right[0] + (zp[z][2] - mid[2]) * right[2];
-            for (int k = 0; k < 3; ++k) zp[z][k] -= 2.0f * d * right[k];
+            holster_frame::mirror_body_point(zp[z], right, bp.root, bp.bone[body::kPelvisPoint], bp.bone_ok[body::kPelvisPoint]);
         }
     }
     {  // [Holsters] Anchor=headset: every zone moved with the neck's offset since recentre (in the game camera's rows:
