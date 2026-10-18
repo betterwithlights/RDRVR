@@ -33,6 +33,7 @@
 #include "core/pose.h"
 #include "core/reload.h"
 #include "core/rig_snapshot.h"
+#include "core/holster_record.h"
 
 namespace rdrvr::body {
 namespace {
@@ -6088,7 +6089,12 @@ void hk_DrawVisEntity(void* ctx, void** rec, uint64_t pass, uint64_t bucket, uin
                         // camera-relative space as the player's own set (a held rifle: the player set's correction for
                         // its bone, as is, put it in the hands)
                         const bool rec_matrix = (*reinterpret_cast<const uint32_t*>(reinterpret_cast<uintptr_t>(rec) + 0xac) & 0x10000) != 0;
-                        if (!rec_matrix && hp) {  // a held prop's skinned set: the world less its offset, moved in the world
+                        if (rec_matrix && hp && hp_slot >= held_prop::kHolsterSlot && hp_slot < held_prop::kModelSlot) {
+                            // Move the outer current/previous record together, leaving local bones intact.
+                            // Record-only and record*bone consumers must see the same correction.
+                            // The existing rec_save path restores both halves after the draw.
+                            holster_record::apply_delta(rc, c.A, c.a);
+                        } else if (!rec_matrix && hp) {  // a held prop's skinned set: the world less its offset, moved in the world
                             const float* po = reinterpret_cast<const float*>(mset + 0x10);
                             for (size_t j = 0; j < static_cast<size_t>(count) * 2; ++j) {
                                 float* m = sm + j * 12;
