@@ -503,6 +503,7 @@ const HeldSample* newest_held(const HeldSample (&held)[kHeldRing]) {
 }
 
 struct Frame {
+    body_facing::Heading facing;
     bool valid = false;
     uintptr_t skel = 0;
     bool hide = false;
@@ -4329,6 +4330,7 @@ void transform_set(float* s, int count, int slot, const Frame& f, const float* o
             g_hand_corr[h].ik = f.ik[h];
         }
         g_points.ms = now;
+        g_points.facing = f.facing;
         std::memcpy(g_points.cam, f.cam, sizeof(g_points.cam));
         g_points.cam_ok = f.cam_ok;
         g_points.fore_ok = pub_fore;
@@ -7238,6 +7240,7 @@ bool install() {
 }
 
 void before_scene(const float* cam) {
+    static body_facing::HeadFacing physical_facing;
     {  // the filter's new entries, logged here (never in the draw hook), at most 4 a frame
         std::lock_guard lock(g_cull_note_mutex);
         for (int k = 0; k < 4 && g_cull_note_logged < g_cull_note_n; ++k, ++g_cull_note_logged) {
@@ -7256,7 +7259,10 @@ void before_scene(const float* cam) {
         log::info("[body] first-person body %s", active ? "on" : "off");
     }
     g_frame.valid = false;
-    if (!active) return;
+    if (!active) {
+        physical_facing = {};
+        return;
+    }
     bool hide, follow, lock_facing;
     float back, sign, pitch_deg;
     int stance;
@@ -7330,6 +7336,22 @@ void before_scene(const float* cam) {
         }
     }
     g_actor_flags.store(flags, std::memory_order_relaxed);
+    // Keep shoulders, elbow hints and holsters in one sampled facing frame.
+    // Tracking and camera transforms never receive the physical yaw a second time.
+    const float root_forward_length = std::hypot(w[8] * sign, w[10] * sign);
+    const bool physical_turn = root_forward_length > 1e-3f &&
+        body_facing::follows_physical_turn(pose::anchor_active(), lock_facing, f.actor_valid, flags);
+    // VehicleHeading/StickTurn can now supply a separate wagon view offset.
+    // Drivers use that view's tracking frame; horseback/cover keep their old frame.
+    const bool driver_view = physical_turn && (flags & RDRVR_ACTOR_DRIVING);
+    const float tracking_heading = driver_view ? pose::body_heading_deg() : pose::torso_heading_deg();
+    float head_yaw = 0;
+    const uint32_t before_gen = camera_lever::recentre_gen();
+    const bool head_valid = physical_turn && camera_lever::head_yaw_deg(&head_yaw);
+    const uint32_t after_gen = camera_lever::recentre_gen();
+    f.facing = physical_facing.sample(tracking_heading, physical_turn, head_valid && before_gen == after_gen,
+                                      head_yaw, after_gen, driver_view);
+    const float drawn_heading = f.facing.drawn_deg * 0.0174532925f;
     {  // [Body] Stance=still: the bind pose's origin, the head's height low-passed as the camera's (pose.cpp)
         static bool s_ok = false, prev_ok = false;
         static float s_h = 0.0f, prev_t[3] = {};
@@ -7515,8 +7537,8 @@ void before_scene(const float* cam) {
         std::memcpy(f.ik_r[hh], rr, sizeof(rr));
         std::memcpy(grip_wp[hh], wp, sizeof(wp));
         for (int k = 0; k < 3; ++k) f.ik_t[hh][k] = wp[k] + rr[k * 3 + 2] * hc.wrist_offset;  // back along the grip's +z
-        // the elbow's hint: down, out to the side, a little back (the camera's heading)
-        float hd_ = pose::torso_heading_deg() * 0.0174532925f;  // run 9: the horse's while the ride's view is turned
+        // The elbow hint and corrected shoulders use the same facing sample.
+        float hd_ = drawn_heading;
         float fwd[3] = {-std::sin(hd_), 0, -std::cos(hd_)}, right[3] = {std::cos(hd_), 0, -std::sin(hd_)};
         float out = hh ? 1.0f : -1.0f;
         for (int k = 0; k < 3; ++k) f.ik_pole[hh][k] = (k == 1 ? -1.0f : 0.0f) + 0.6f * out * right[k] - 0.3f * fwd[k];
@@ -7605,9 +7627,9 @@ void before_scene(const float* cam) {
         }
     }
     f.pitch = pitch_deg * 0.0174532925f;
-    // the facing lock: the angle about the world's up from the actor's forward (the root's -z) to the camera's
+    // the facing lock: the angle about the world's up from the actor's forward (the root's -z) to the drawn body's
     // (heading h faces (-sin h, -cos h))
-    float h = pose::torso_heading_deg() * 0.0174532925f;  // run 9: the horse's while the ride's view is turned
+    float h = drawn_heading;  // horseback and cover retain their existing torso frame
     float cfx = -std::sin(h), cfz = -std::cos(h);
     f.view_h = h;
     {
@@ -7630,8 +7652,10 @@ void before_scene(const float* cam) {
     }
     float off[3];
     if (follow && camera_lever::head_offset(off)) {
-        sw[0] += std::cos(h) * off[0] + std::sin(h) * off[2];
-        sw[2] += -std::sin(h) * off[0] + std::cos(h) * off[2];
+        // Head translation is expressed in the neutral tracking frame.
+        const float tracking_h = f.facing.tracking_deg * 0.0174532925f;
+        sw[0] += std::cos(tracking_h) * off[0] + std::sin(tracking_h) * off[2];
+        sw[2] += -std::sin(tracking_h) * off[0] + std::cos(tracking_h) * off[2];
     }
     for (int k = 0; k < 3; ++k) f.shift_bind[k] = sw[0] * w[k * 4 + 0] + sw[1] * w[k * 4 + 1] + sw[2] * w[k * 4 + 2];
     f.shift = sw[0] != 0 || sw[2] != 0;

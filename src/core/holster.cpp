@@ -696,7 +696,7 @@ void holster_frame() {
     auto zone_rounds = [&](int z) { return z == kAmmoZone; };
     auto any_here = [&](int z) { return any_item && z >= 0 && z < kZones && gun_zone(zones[z]); };
     const bool lefty = controls::left_handed();
-    const float hd = pose::torso_heading_deg() * 0.0174532925f;  // run 9: the horse's, not the ride's turned view
+    const float hd = bp.facing.drawn_deg * 0.0174532925f;  // the sample that placed the bones
     const float fwd[3] = {-std::sin(hd), 0.0f, -std::cos(hd)}, right[3] = {std::cos(hd), 0.0f, -std::sin(hd)}, up[3] = {0, 1, 0};
     // the holsters' own frame: the body's, or turned with the headset ([Holsters] TurnWithHead, below)
     float hr[3] = {right[0], right[1], right[2]}, hf[3] = {fwd[0], fwd[1], fwd[2]};
@@ -836,7 +836,8 @@ void holster_frame() {
                     zyaw = 0.0f;
                 }
                 float hy = 0.0f;
-                if (!g_turn_head.load(std::memory_order_relaxed)) {
+                const bool turn_head = g_turn_head.load(std::memory_order_relaxed);
+                if (!turn_head) {
                     zyaw = 0.0f;
                 } else if (camera_lever::head_yaw_deg(&hy)) {  // (no head pose this frame: kept where they point)
                     // [Holsters] TurnByHands: both hands well ahead of the neck: the target halfway to their direction
@@ -858,7 +859,7 @@ void holster_frame() {
                         const float sx = bp.hand[0][0] - bp.hand[1][0], sz = bp.hand[0][2] - bp.hand[1][2];
                         ahead = ahead && std::sqrt(sx * sx + sz * sz) < 0.35f;
                         if (ahead) {
-                            hands_yaw = std::remainder(std::atan2(-mx, -mz) * 57.29578f - hd * 57.29578f, 360.0f);
+                            hands_yaw = std::remainder(std::atan2(-mx, -mz) * 57.29578f - bp.facing.tracking_deg, 360.0f);
                             hy += 0.5f * std::remainder(hands_yaw - hy, 360.0f);
                         }
                     }
@@ -870,7 +871,7 @@ void holster_frame() {
                     zyaw = std::remainder(zyaw, 360.0f);
                 }
                 g_zone_yaw_pub.store(zyaw, std::memory_order_relaxed);
-                const float a = hd + zyaw * 0.0174532925f;
+                const float a = bp.facing.holster_deg(turn_head, zyaw) * 0.0174532925f;
                 hf[0] = -std::sin(a), hf[2] = -std::cos(a);
                 hr[0] = std::cos(a), hr[2] = -std::sin(a);
             }
@@ -918,7 +919,9 @@ void holster_frame() {
     // turn with you"): riding, the right stick's turn of the view turns the whole layout with it, about the head's
     // vertical axis: the player's own hips turn with their view while John keeps facing the horse (run 9 had the holsters
     // follow the horse)
-    const float ride_turn = (st.flags & (RDRVR_ACTOR_MOUNTED | RDRVR_ACTOR_VEHICLE)) ? pose::ride_turn_deg() : 0.0f;
+    // A driver's sampled body frame already includes the vehicle's view turn.
+    const float ride_turn = bp.facing.remaining_ride_turn(
+        (st.flags & (RDRVR_ACTOR_MOUNTED | RDRVR_ACTOR_VEHICLE)) ? pose::ride_turn_deg() : 0.0f);
     if (ride_turn != 0.0f && bp.cam_ok) {
         const float* cp = bp.cam + 12;
         const float a = hd + ride_turn * 0.0174532925f;
