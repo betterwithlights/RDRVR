@@ -26,6 +26,7 @@
 #include "core/dual.h"
 #include "core/hands.h"
 #include "core/holster_frame.h"
+#include "core/legacy_holsters.h"
 #include "core/hooks.h"
 #include "core/log.h"
 #include "core/menu.h"
@@ -2048,6 +2049,7 @@ bool g_zone_defaults_ok = false;
 void load_zones() {
     std::lock_guard lock(g_zone_mutex);
     if (!g_zone_defaults_ok) {
+        if (config::legacy_holsters()) legacy_holsters::defaults(g_zones);
         for (int i = 0; i < kZones; ++i) g_zone_defaults[i] = g_zones[i];
         g_zone_defaults_ok = true;
     }
@@ -2088,7 +2090,8 @@ void load_zones() {
             z.weapon = weapon_from_token(config::get_string("Holsters", "AmmoWeapon", "auto"));
         } else if (z.slots[0] >= 0) {
             // the lower back takes the old knife holster's choice unless it has its own
-            z.weapon = weapon_from_token(config::get_string("Holsters", (std::string(z.key) + "Weapon").c_str(), "auto"));
+            const std::string def = !std::strcmp(z.key, "LowerBack") ? config::get_string("Holsters", "KnifeWeapon", "auto") : "auto";
+            z.weapon = weapon_from_token(config::get_string("Holsters", (std::string(z.key) + "Weapon").c_str(), def.c_str()));
             z.enabled = config::get_bool("Holsters", (std::string(z.key) + "Enabled").c_str(), z.enabled);
         }
     }
