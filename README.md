@@ -631,6 +631,20 @@ on another build (or after a game update) the mod looks for each one by its sign
 from `tools/gen_buildsig.py`) and runs on the found addresses only when every one is found and checked; otherwise it
 installs no game hooks.
 
+### Standalone regression tests
+
+From an x64 MSVC developer prompt, with CMake and Ninja available:
+
+```powershell
+cmake -S tests -B out/regression-tests -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build out/regression-tests
+ctest --test-dir out/regression-tests --output-on-failure
+```
+
+These tests use synthetic data and require no game files, headset, OpenXR runtime, vcpkg dependencies or RedHook SDK.
+They cover bounded skeleton reads, physical body/holster facing, carriage input axes and current/previous holster
+draw-record transforms. Passing them does not establish correct rendering or gameplay in a headset.
+
 ## How it works (briefly)
 
 - `dinput8.dll` (the core) loads with the game, hooks its D3D12 renderer to draw the scene once per eye, owns the
